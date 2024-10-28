@@ -1,0 +1,287 @@
+
+
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Bot Interface</title>
+    <script src="https://cdn.rawgit.com/davidshimjs/qrcodejs/gh-pages/qrcode.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Arial', sans-serif;
+        }
+
+        body {
+            background-color: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 500px;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .header h1 {
+            color: #0d544c;
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+
+        .qr-container {
+            display: flex;
+            justify-content: center;
+            margin: 20px 0;
+        }
+
+        #qrImage {
+            width: 256px;
+            height: 256px;
+            border: 1px solid #ddd;
+            padding: 10px;
+        }
+
+        .input-group {
+            margin-bottom: 15px;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #333;
+        }
+
+        .input-group input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+
+        .button {
+            background-color: #18413c;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            padding: 12px 20px;
+            width: 100%;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .button:hover {
+            background-color: #075E54;
+        }
+
+        .button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+
+        .status {
+            margin-top: 15px;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+        }
+
+        .status.error {
+            background-color: #ffebee;
+            color: #c62828;
+        }
+
+        .status.success {
+            background-color: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .hidden {
+            display: none;
+        }
+        
+        .loading {
+            text-align: center;
+            color: #666;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>WhatsApp automation</h1>
+            <p>Connect and send messages easily</p>
+        </div>
+
+        <div id="initSection">
+            <button id="initButton" class="button">Initialize WhatsApp Client</button>
+        </div>
+
+        <div id="qrSection" class="hidden">
+            <div class="qr-container">
+                <img id="qrImage" alt="QR Code" style="width: 256px; height: 256px;"/>
+            </div>
+            <p style="text-align: center; color: #666;">Scan this QR code with WhatsApp to connect</p>
+        </div>
+
+        <div id="messageSection" class="hidden">
+            <div class="input-group">
+                <label for="phoneNumber">Phone Number (with country code)</label>
+                <input type="text" id="phoneNumber" placeholder="+91XXXXXXXXXX" />
+            </div>
+
+            <div class="input-group">
+                <label for="message">Message</label>
+                <input type="text" id="message" placeholder="Enter your message" />
+            </div>
+
+            <button id="sendButton" class="button">Send Message</button>
+        </div>
+
+        <div id="status" class="status hidden"></div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:3001';
+        let isInitialized = false;
+
+        // DOM Elements
+        const initButton = document.getElementById('initButton');
+        const initSection = document.getElementById('initSection');
+        const qrSection = document.getElementById('qrSection');
+        const messageSection = document.getElementById('messageSection');
+        const qrCanvas = document.getElementById('qrCanvas');
+        const qrImage = document.getElementById('qrImage');
+        const phoneNumber = document.getElementById('phoneNumber');
+        const message = document.getElementById('message');
+        const sendButton = document.getElementById('sendButton');
+        const status = document.getElementById('status');
+
+        // Show status message
+        function showStatus(message, isError = false) {
+            status.textContent = message;
+            status.className = `status ${isError ? 'error' : 'success'}`;
+            status.classList.remove('hidden');
+            setTimeout(() => {
+                status.classList.add('hidden');
+            }, 5000);
+        }
+
+        function generateQRImage(text) {
+            // Create QR code
+            const qr = new QRCode(qrCanvas, {
+                text: text,
+                width: 256,
+                height: 256,
+                colorDark: "#000000",
+                colorLight: "#ffffff",
+                correctLevel: QRCode.CorrectLevel.H
+            });
+
+            setTimeout(() => {
+                const dataUrl = qrCanvas.toDataURL('image/png');
+                qrImage.src = dataUrl;
+                qrCanvas.classList.add('hidden');
+            }, 100);
+        }
+
+        // Initialize WhatsApp client
+        async function initializeClient() {
+            try {
+                const response = await fetch(`${API_URL}/init`, {
+                    method: 'POST'
+                });
+                const data = await response.json();
+                
+                if (response.ok) {
+                    isInitialized = true;
+                    initSection.classList.add('hidden');
+                    qrSection.classList.remove('hidden');
+                    messageSection.classList.remove('hidden');
+                    pollQRCode();
+                } else {
+                    showStatus(data.error || 'Failed to initialize client', true);
+                }
+            } catch (error) {
+                showStatus('Failed to connect to server', true);
+            }
+        }
+
+        // Poll for QR Code
+        async function pollQRCode() {
+        const interval = setInterval(async () => {
+            try {
+                const response = await fetch(`${API_URL}/qr`);
+                const data = await response.json();
+                
+                if (data.qrCode) {
+                    // Now we can directly set the data URL as image src
+                    document.getElementById('qrImage').src = data.qrCode;
+                }
+            } catch (error) {
+                console.error('Error polling QR code:', error);
+            }
+        }, 1000);
+    }
+
+        // Send Message
+        async function sendMessage() {
+            if (!phoneNumber.value || !message.value) {
+                showStatus('Please fill in all fields', true);
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/send`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        number: phoneNumber.value,
+                        message: message.value
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showStatus('Message sent successfully');
+                    message.value = ''; // Clear message input
+                } else {
+                    showStatus(data.error || 'Failed to send message', true);
+                }
+            } catch (error) {
+                showStatus('Failed to send message', true);
+            }
+        }
+
+        initButton.addEventListener('click', initializeClient);
+        sendButton.addEventListener('click', sendMessage);
+
+        phoneNumber.addEventListener('input', function() {
+            this.value = this.value.replace(/[^\d+]/g, '');
+        });
+    </script>
+</body>
+</html>
